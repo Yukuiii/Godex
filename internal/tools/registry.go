@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"github.com/sashabaranov/go-openai"
 	"time"
 )
 
@@ -34,6 +35,18 @@ func (r *ToolRegistry) Register(name, namespace string, handler ToolHandler) {
 	defer r.mu.Unlock()
 	key := buildHandlerKey(name, namespace)
 	r.handlers[key] = handler
+}
+
+// GetAllToolSpecs collects and returns the OpenAPI function definitions of all registered tools.
+func (r *ToolRegistry) GetAllToolSpecs() []openai.Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var specs []openai.Tool
+	for _, handler := range r.handlers {
+		specs = append(specs, handler.GetToolSpec())
+	}
+	return specs
 }
 
 func (r *ToolRegistry) getHandler(name, namespace string) ToolHandler {

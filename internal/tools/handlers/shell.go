@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"godex/internal/tools"
+
+	openai "github.com/sashabaranov/go-openai"
+	"github.com/sashabaranov/go-openai/jsonschema"
 )
 
 // ShellPayload defines the parameter structure expected from the LLM when acting as a shell.
@@ -60,12 +63,25 @@ func (h *ShellHandler) PreToolUsePayload(invocation *tools.ToolInvocation) *tool
 }
 
 func (h *ShellHandler) PostToolUsePayload(callID string, payload *tools.ToolPayload, result tools.ToolOutput) *tools.PostToolUsePayload {
-	var sp ShellPayload
-	_ = json.Unmarshal(payload.Arguments, &sp)
+	return &tools.PostToolUsePayload{Command: "shell", ToolResponse: result.ToJSON()}
+}
 
-	return &tools.PostToolUsePayload{
-		Command:      sp.Command,
-		ToolResponse: result.ToJSON(),
+func (h *ShellHandler) GetToolSpec() openai.Tool {
+	return openai.Tool{
+		Type: openai.ToolTypeFunction,
+		Function: &openai.FunctionDefinition{
+			Name:        "local_shell",
+			Description: "Execute a strictly un-interactive command on the host OS shell.",
+			Parameters: jsonschema.Definition{
+				Type: jsonschema.Object,
+				Properties: map[string]jsonschema.Definition{
+					"command":    {Type: jsonschema.String, Description: "shell command"},
+					"workdir":    {Type: jsonschema.String},
+					"timeout_ms": {Type: jsonschema.Integer},
+				},
+				Required: []string{"command"},
+			},
+		},
 	}
 }
 

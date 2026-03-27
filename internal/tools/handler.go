@@ -1,6 +1,10 @@
 package tools
 
-import "context"
+import (
+	"context"
+
+	"github.com/sashabaranov/go-openai"
+)
 
 // PreToolUsePayload and PostToolUsePayload are used for executing safety and tracking hooks.
 type PreToolUsePayload struct {
@@ -29,4 +33,7 @@ type ToolHandler interface {
 
 	PreToolUsePayload(invocation *ToolInvocation) *PreToolUsePayload
 	PostToolUsePayload(callID string, payload *ToolPayload, result ToolOutput) *PostToolUsePayload
+	
+	// GetToolSpec returns the JSON Schema definition of this tool for LLMs.
+	GetToolSpec() openai.Tool
 }

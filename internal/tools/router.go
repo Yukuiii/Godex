@@ -1,6 +1,10 @@
 package tools
 
-import "context"
+import (
+	"context"
+
+	"github.com/sashabaranov/go-openai"
+)
 
 // ToolRouter is responsible for taking multi-agent API calls/messages
 // and transmuting them into generic ToolCall definitions, then dispatching via the Registry.
@@ -13,6 +17,11 @@ func NewToolRouter(registry *ToolRegistry) *ToolRouter {
 }
 
 // BuildAndDispatch unifies the request layer before executing dispatch on the registry.
+// GetAllToolSpecs forwards the collection request to the internal ToolRegistry.
+func (r *ToolRouter) GetAllToolSpecs() []openai.Tool {
+	return r.registry.GetAllToolSpecs()
+}
+
 func (r *ToolRouter) BuildAndDispatch(ctx context.Context, call *ToolCall) (ToolOutput, error) {
 	// Construct the internal ToolInvocation referencing contextual variables.
 	invocation := &ToolInvocation{
