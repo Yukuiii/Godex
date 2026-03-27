@@ -71,10 +71,10 @@ func (m appModel) Init() tea.Cmd {
 func renderMessages(messages []chatMessage, width int) string {
 	var s strings.Builder
 	if width < 10 {
-		width = 80 // 兜底宽度保护
+		width = 80 // Fallback width protection
 	}
 	
-	// 使用 lipgloss 限定最大排版宽度，实现自然断行
+	// Use lipgloss to limit max width for natural word wrapping
 	wrapStyle := lipgloss.NewStyle().Width(width - 4)
 
 	for _, msg := range messages {
@@ -109,8 +109,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		headerHeight := lipgloss.Height(titleStyle.Render("╭── GODEX CHAT ENGINE ──╮")) + 2 // 包含下划线换行
-		footerHeight := 2                                                                   // 底部两行
+		headerHeight := lipgloss.Height(titleStyle.Render("╭── GODEX CHAT ENGINE ──╮")) + 2 // Includes bottom margin
+		footerHeight := 2                                                                   // Footer lines
 
 		if !m.ready {
 			m.vp = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
@@ -139,7 +139,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
 			m.vp.GotoBottom()
 
-			// ====== 用户输入时，调用底层的 Agent 跑起来 ======
+			// ====== Trigger the underlying Agent upon user input ======
 			m.agentCtrl.AddUserMessage(v)
 			m.streamChan = make(chan agent.AgentEvent, 100)
 
@@ -152,7 +152,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 
-	// 只捕获纯粹的 Agent 流信息事件
+	// Capture pure Agent Stream events only
 	case agent.AgentEvent:
 		if msg.Err != nil {
 			m.isLoading = false
@@ -163,7 +163,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Done {
 			m.isLoading = false
 				m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
-			return m, nil // 数据推完了
+			return m, nil // Stream pushing is complete
 		}
 
 		if msg.ToolCallCreated != nil {
@@ -228,7 +228,7 @@ func (m appModel) View() string {
 	return fmt.Sprintf("%s\n\n%s\n%s", header, body, footer.String())
 }
 
-// RunTUI 是暴晒给外面的唯一入口。所有模型逻辑、样式均在它本身闭包。
+// RunTUI is the single exposed entry point. All TUI logic and styling are encapsulated here.
 func RunTUI(agentCtrl *agent.AgentControl) error {
 	p := tea.NewProgram(initialModel(agentCtrl), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
