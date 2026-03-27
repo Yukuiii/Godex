@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
@@ -22,9 +23,6 @@ import (
 	"godex/internal/tools/handlers"
 )
 
-// ------------------------------
-// 赛博朋克霓虹主题色盘
-// ------------------------------
 var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -43,11 +41,10 @@ var (
 			Foreground(lipgloss.Color("240"))
 )
 
-// streamMsg 承载后台异步协程往 TUI 的 UI 线程持续不断的事件注入
 type streamMsg struct {
-	DeltaContent    string             // AI 正在逐字说话
-	ToolCallCreated *openai.ToolCall   // 拦截到了新的工具使用企图
-	ToolCallResult  *chatMessage       // 刚刚执行完了一个本地指令
+	DeltaContent    string
+	ToolCallCreated *openai.ToolCall
+	ToolCallResult  *chatMessage
 	Done            bool
 	Err             error
 }
@@ -60,12 +57,14 @@ type chatMessage struct {
 }
 
 type model struct {
+	vp         viewport.Model
 	ti         textinput.Model
 	client     *openai.Client
 	registry   *tools.ToolRegistry
 	messages   []chatMessage
 	isLoading  bool
 	streamChan chan streamMsg
+	ready      bool
 }
 
 func initialModel() model {
@@ -99,7 +98,6 @@ func initialModel() model {
 				Transport: transport,
 			}
 		}
-
 		client = openai.NewClientWithConfig(config)
 	}
 
@@ -120,10 +118,55 @@ func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+// 帮助函数：复用历史对话渲染的逻辑推送到隔离的 Viewport 中
+func renderMessages(messages []chatMessage) string {
+	var s strings.Builder
+	for _, msg := range messages {
+		switch msg.role {
+		case openai.ChatMessageRoleUser:
+			s.WriteString(userStyle.Render("You: ") + msg.content + "\n\n")
+
+		case openai.ChatMessageRoleAssistant:
+			if msg.content != "" {
+				s.WriteString(agentStyle.Render("Godex: ") + msg.content + "\n\n")
+			}
+			if len(msg.toolCalls) > 0 {
+				for _, call := range msg.toolCalls {
+					s.WriteString(systemStyle.Render(fmt.Sprintf("  [Tool] Using ➔ %s", call.Function.Name)) + "\n")
+				}
+				s.WriteString("\n")
+			}
+
+		case openai.ChatMessageRoleTool:
+			s.WriteString(systemStyle.Render("  [Success] System Job Completed") + "\n\n")
+
+		case openai.ChatMessageRoleSystem:
+			s.WriteString(systemStyle.Render(" > " + msg.content) + "\n\n")
+		}
+	}
+	return s.String()
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// 当命令行尺寸变动时自适应 Viewport 的宽高边界
+		headerHeight := lipgloss.Height(titleStyle.Render("╭── GODEX CHAT ENGINE ──╮")) + 2 // 包含下划线换行
+		footerHeight := 2                                                                   // 给底部留两行的操作空间
+
+		if !m.ready {
+			m.vp = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
+			m.vp.YPosition = headerHeight
+			m.vp.SetContent(renderMessages(m.messages))
+			m.ready = true
+		} else {
+			m.vp.Width = msg.Width
+			m.vp.Height = msg.Height - headerHeight - footerHeight
+		}
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
@@ -131,34 +174,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			v := strings.TrimSpace(m.ti.Value())
 			if v == "" || m.isLoading {
-				return m, nil
+				break
 			}
 
 			m.ti.SetValue("")
 			m.messages = append(m.messages, chatMessage{role: openai.ChatMessageRoleUser, content: v})
 			m.isLoading = true
+			
+			// 触发交互时，自动将视野卷动到页面最底部
+			m.vp.SetContent(renderMessages(m.messages))
+			m.vp.GotoBottom()
 
 			if m.client == nil {
 				m.messages = append(m.messages, chatMessage{role: openai.ChatMessageRoleSystem, content: "Error: Missing API_KEY"})
 				m.isLoading = false
+				m.vp.SetContent(renderMessages(m.messages))
 				return m, nil
 			}
 
-			// 为本次聊天开启专属的新流水线通道
 			m.streamChan = make(chan streamMsg, 100)
-			
-			// 开启背景循环执行与实时投递，并同时监听通道
 			return m, tea.Batch(
 				m.runStreamWorker(),
 				m.waitForStream(),
 			)
 		}
 
-	// 接住管道里源源不断流过来的增量消息
 	case streamMsg:
 		if msg.Err != nil {
 			m.isLoading = false
 			m.messages = append(m.messages, chatMessage{role: openai.ChatMessageRoleSystem, content: "Error: " + msg.Err.Error()})
+			m.vp.SetContent(renderMessages(m.messages))
 			return m, nil
 		}
 		if msg.Done {
@@ -166,7 +211,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// 根据异步协程传来的四种状态类型，对屏幕文字做不同处理
 		if msg.ToolCallCreated != nil {
 			m.messages = append(m.messages, chatMessage{
 				role:      openai.ChatMessageRoleAssistant,
@@ -175,7 +219,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.ToolCallResult != nil {
 			m.messages = append(m.messages, *msg.ToolCallResult)
 		} else if msg.DeltaContent != "" {
-			// 如果连续说话，就续在上一条神明对话的尾巴上，形成打字机效果
 			lastIdx := len(m.messages) - 1
 			if lastIdx >= 0 && m.messages[lastIdx].role == openai.ChatMessageRoleAssistant && len(m.messages[lastIdx].toolCalls) == 0 {
 				m.messages[lastIdx].content += msg.DeltaContent
@@ -184,15 +227,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// 循环等待下一粒打字的字发过来
+		// 有字打过来的时候一边更新界面一边锁定底部
+		m.vp.SetContent(renderMessages(m.messages))
+		m.vp.GotoBottom()
 		return m, m.waitForStream()
 	}
 
 	m.ti, cmd = m.ti.Update(msg)
-	return m, cmd
+	cmds = append(cmds, cmd)
+
+	m.vp, cmd = m.vp.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
 }
 
-// waitForStream 监听来自底层工作协程的流式字并包裹成 tea.Msg 供 Update() 消费刷新
 func (m model) waitForStream() tea.Cmd {
 	return func() tea.Msg {
 		msg, ok := <-m.streamChan
@@ -203,7 +252,6 @@ func (m model) waitForStream() tea.Cmd {
 	}
 }
 
-// runStreamWorker 是最核心的异步大脑。不再返回结果后统一包起，而是将任何过程通过 chan 推送到外部
 func (m model) runStreamWorker() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -230,12 +278,11 @@ func (m model) runStreamWorker() tea.Cmd {
 			modelName = "openai/gpt-3.5-turbo"
 		}
 
-		// 模型网络循环：由于模型有连发思考跟行动的需求
 		for {
 			req := openai.ChatCompletionRequest{
 				Model:    modelName,
 				Messages: apiMessages,
-				Stream:   true, // 👉 开启 Stream 魔法模式！
+				Stream:   true,
 				Tools: []openai.Tool{
 					{
 						Type: openai.ToolTypeFunction,
@@ -262,7 +309,6 @@ func (m model) runStreamWorker() tea.Cmd {
 				break
 			}
 
-			// 我们需要一种结构来拼装大模型把 JSON 打碎传过来的块（Tool Call Aggregation）
 			toolCallMap := make(map[int]openai.ToolCall)
 			var totalContent strings.Builder
 
@@ -281,13 +327,11 @@ func (m model) runStreamWorker() tea.Cmd {
 				if len(resp.Choices) > 0 {
 					delta := resp.Choices[0].Delta
 
-					// 1. 如果大模型在说话，直接实时打字推到控制台界面
 					if delta.Content != "" {
 						totalContent.WriteString(delta.Content)
 						m.streamChan <- streamMsg{DeltaContent: delta.Content}
 					}
 
-					// 2. 如果大模型决定要下发系统指令了（也是掰碎一波波传过来的，我们要手动将其拼接）
 					for _, tcChunk := range delta.ToolCalls {
 						idx := 0
 						if tcChunk.Index != nil {
@@ -312,15 +356,14 @@ func (m model) runStreamWorker() tea.Cmd {
 			}
 
 			if len(toolCallMap) == 0 {
-				break // 如果本回合只说了话而没用工具，意味着此轮大循环思考彻底完毕
+				break
 			}
 
-			// == 准备把本回合组装好的大结构正式推发 ==
 			var finalToolCalls []openai.ToolCall
 			for _, tc := range toolCallMap {
 				finalToolCalls = append(finalToolCalls, tc)
 				tcClone := tc
-				m.streamChan <- streamMsg{ToolCallCreated: &tcClone} // 👉 流入提示界面：“我又要跑一次本地系统命令了”
+				m.streamChan <- streamMsg{ToolCallCreated: &tcClone}
 			}
 
 			apiMessages = append(apiMessages, openai.ChatCompletionMessage{
@@ -329,7 +372,6 @@ func (m model) runStreamWorker() tea.Cmd {
 				ToolCalls: finalToolCalls,
 			})
 
-			// 拦截接驳我们的 Registry，开始真正穿透操作系统做事
 			for _, tc := range finalToolCalls {
 				payload := &tools.ToolPayload{
 					Kind:      tools.ToolKindShell,
@@ -349,11 +391,9 @@ func (m model) runStreamWorker() tea.Cmd {
 					c = string(res.ToJSON())
 				}
 
-				// 将执行完毕的结果实时汇报到终端界面...
 				toolChatMsg := &chatMessage{role: openai.ChatMessageRoleTool, content: c, toolCallID: tc.ID}
 				m.streamChan <- streamMsg{ToolCallResult: toolChatMsg}
 
-				// ...同时塞到队列尾部重新向网络抛回给大模型分析
 				apiMessages = append(apiMessages, openai.ChatCompletionMessage{
 					Role:       openai.ChatMessageRoleTool,
 					Content:    c,
@@ -367,51 +407,29 @@ func (m model) runStreamWorker() tea.Cmd {
 	}
 }
 
-// ------------------------------
-// Elm 架构: 4. View
-// ------------------------------
 func (m model) View() string {
-	var s strings.Builder
-	s.WriteString(titleStyle.Render("╭── GODEX CHAT ENGINE ──╮") + "\n\n")
-
-	for _, msg := range m.messages {
-		switch msg.role {
-		case openai.ChatMessageRoleUser:
-			s.WriteString(userStyle.Render("You: ") + msg.content + "\n\n")
-
-		case openai.ChatMessageRoleAssistant:
-			if msg.content != "" {
-				s.WriteString(agentStyle.Render("Godex: ") + msg.content + "\n\n")
-			}
-			if len(msg.toolCalls) > 0 {
-				for _, call := range msg.toolCalls {
-					// 极简状态：仅提示由于需要正在使用什么工具，屏蔽参数
-					s.WriteString(systemStyle.Render(fmt.Sprintf("  [Tool] Using ➔ %s", call.Function.Name)) + "\n")
-				}
-			}
-
-		case openai.ChatMessageRoleTool:
-			// 极简状态：屏蔽超长返回数据，仅给一个打钩标志
-			s.WriteString(systemStyle.Render("  [Success] System Job Completed") + "\n\n")
-			
-		case openai.ChatMessageRoleSystem:
-			s.WriteString(systemStyle.Render(" > " + msg.content) + "\n\n")
-		}
+	if !m.ready {
+		return "\n  Initializing Godex OS..."
 	}
 
+	header := titleStyle.Render("╭── GODEX CHAT ENGINE ──╮")
+	body := m.vp.View()
+
+	var footer strings.Builder
 	if m.isLoading {
-		s.WriteString(agentStyle.Render("Godex is thinking & interacting with OS...") + "\n")
+		footer.WriteString(agentStyle.Render("Godex is thinking & interacting with OS..."))
 	} else {
-		s.WriteString(m.ti.View() + "\n")
-		s.WriteString(systemStyle.Render("  [Enter: Send] [Esc: Quit]") + "\n")
+		footer.WriteString(m.ti.View() + "\n")
+		footer.WriteString(systemStyle.Render("  [Enter: Send]  [Esc: Quit]  [PgUp/PgDn: Scroll]"))
 	}
 
-	return s.String()
+	return fmt.Sprintf("%s\n\n%s\n%s", header, body, footer.String())
 }
 
 func main() {
 	_ = godotenv.Load()
-	p := tea.NewProgram(initialModel())
+	// 加载 Alt Screen 以支持沉浸式滚动视口和对旧窗口日志的无痕清理
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Godex Engine failed to start: %v\n", err)
 		os.Exit(1)
