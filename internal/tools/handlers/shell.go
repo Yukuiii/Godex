@@ -1,0 +1,128 @@
+package handlers
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"time"
+
+	"godex/internal/tools"
+)
+
+// ShellPayload defines the parameter structure expected from the LLM when acting as a shell.
+type ShellPayload struct {
+	Command   string `json:"command"`
+	Workdir   string `json:"workdir,omitempty"`
+	TimeoutMs int    `json:"timeout_ms,omitempty"`
+}
+
+// ShellOutput encapsulates the detailed response to be returned to the model context.
+type ShellOutput struct {
+	ExitCode int    `json:"exit_code"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	Error    string `json:"error,omitempty"`
+}
+
+// ShellHandler performs local OS shell command execution matching the ToolHandler pattern.
+type ShellHandler struct{}
+
+var _ tools.ToolHandler = (*ShellHandler)(nil) // Static interface validation
+
+func NewShellHandler() *ShellHandler {
+	return &ShellHandler{}
+}
+
+func (h *ShellHandler) Kind() tools.ToolKind {
+	return tools.ToolKindShell
+}
+
+func (h *ShellHandler) MatchesKind(payload *tools.ToolPayload) bool {
+	return payload != nil && payload.Kind == tools.ToolKindShell
+}
+
+func (h *ShellHandler) IsMutating(ctx context.Context, invocation *tools.ToolInvocation) bool {
+	// Conservative security assumption:
+	// A raw shell explicitly requests root mutation gate locking by default.
+	return true
+}
+
+func (h *ShellHandler) PreToolUsePayload(invocation *tools.ToolInvocation) *tools.PreToolUsePayload {
+	var sp ShellPayload
+	if err := json.Unmarshal(invocation.Payload.Arguments, &sp); err != nil {
+		return &tools.PreToolUsePayload{Command: "parse_error"}
+	}
+	return &tools.PreToolUsePayload{Command: sp.Command}
+}
+
+func (h *ShellHandler) PostToolUsePayload(callID string, payload *tools.ToolPayload, result tools.ToolOutput) *tools.PostToolUsePayload {
+	var sp ShellPayload
+	_ = json.Unmarshal(payload.Arguments, &sp)
+
+	return &tools.PostToolUsePayload{
+		Command:      sp.Command,
+		ToolResponse: result.ToJSON(),
+	}
+}
+
+func (h *ShellHandler) Handle(ctx context.Context, invocation *tools.ToolInvocation) (tools.ToolOutput, error) {
+	var sp ShellPayload
+	if err := json.Unmarshal(invocation.Payload.Arguments, &sp); err != nil {
+		return nil, fmt.Errorf("failed to decode shell payload: %w", err)
+	}
+
+	timeout := time.Duration(sp.TimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 30 * time.Second // Default fallback timeout
+	}
+
+	// Utilizing Go's native OS cancellation context to bound executions
+	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Defaulting to "sh -c" aligns with typical POSIX cross-compatibility.
+	cmd := exec.CommandContext(cmdCtx, "sh", "-c", sp.Command)
+	if sp.Workdir != "" {
+		cmd.Dir = sp.Workdir
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	
+	// Ensure we safely map termination status
+	exitCode := -1
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+
+	errStr := ""
+	if err != nil {
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			errStr = fmt.Sprintf("command timed out after %d milliseconds", timeout.Milliseconds())
+		} else {
+			errStr = err.Error()
+		}
+	}
+
+	outputModel := &ShellOutput{
+		ExitCode: exitCode,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		Error:    errStr,
+	}
+
+	outputBytes, err := json.Marshal(outputModel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize tool output: %w", err)
+	}
+
+	return &tools.GenericToolOutput{
+		Success: exitCode == 0,
+		Data:    outputBytes,
+	}, nil
+}
