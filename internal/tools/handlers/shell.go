@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"godex/internal/tools"
@@ -82,8 +84,22 @@ func (h *ShellHandler) Handle(ctx context.Context, invocation *tools.ToolInvocat
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Defaulting to "sh -c" aligns with typical POSIX cross-compatibility.
-	cmd := exec.CommandContext(cmdCtx, "sh", "-c", sp.Command)
+	// Cross-platform shell detection
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		shell := os.Getenv("COMSPEC")
+		if shell == "" {
+			shell = "cmd.exe"
+		}
+		cmd = exec.CommandContext(cmdCtx, shell, "/C", sp.Command)
+	} else {
+		// POSIX (Linux / macOS) fallback to user's assigned shell or sh
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "sh"
+		}
+		cmd = exec.CommandContext(cmdCtx, shell, "-c", sp.Command)
+	}
 	if sp.Workdir != "" {
 		cmd.Dir = sp.Workdir
 	}
