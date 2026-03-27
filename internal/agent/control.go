@@ -12,7 +12,7 @@ import (
 	"godex/internal/tools"
 )
 
-// AgentEvent 代理层封装的干净上下文抽象通信包，供最上层 UI 单向接收
+// AgentEvent encapsulates clean context abstraction communication packages for one-way reception by the top-level UI.
 type AgentEvent struct {
 	DeltaContent    string
 	ToolCallCreated *openai.ToolCall
@@ -21,15 +21,15 @@ type AgentEvent struct {
 	Err             error
 }
 
-// AgentToolResult 是底层工具执行结束的实体
+// AgentToolResult represents the entity after underlying tool execution completes.
 type AgentToolResult struct {
 	Role       string
 	Content    string
 	ToolCallID string
 }
 
-// AgentControl 全面对齐 Codex Agent Registry / Controller 层级
-// 它负责从内部打通大模型流与底层操作执行工具包的边界，形成多步网络内循环，而绝不允许 UI 操心
+// AgentControl orchestrates the execution flow of tools and stream coordination.
+// It seamlessly connects the boundary between the LLM stream and the underlying tool execution package forming a multi-step inner loop, preventing the UI from bearing this burden.
 type AgentControl struct {
 	client      *llm.ModelClient
 	router      *tools.ToolRouter
@@ -56,7 +56,7 @@ func (a *AgentControl) AddUserMessage(content string) {
 	})
 }
 
-// RunTurn 将会为一次聊天创建闭环迭代，直至模型表示无需再利用工作跳出思考
+// RunTurn creates a closed-loop iteration for a single chat turn until the model signals it no longer needs tools and finishes thinking.
 func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 	defer close(outChan)
 
@@ -71,7 +71,7 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 		var totalContent strings.Builder
 		var finalToolCalls []openai.ToolCall
 
-		// 中转站：将底层的 Stream 传递给 UI 画进度，并在 Agent 控制层留存用作回传历史
+		// Relay: Pass the underlying Stream to the UI to draw progress, and retain it in the Agent control layer for history feedback.
 		for rawEvent := range streamChan {
 			if rawEvent.Err != nil {
 				outChan <- AgentEvent{Err: rawEvent.Err}
@@ -88,7 +88,7 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 			}
 		}
 
-		// 把零散的大模型思维和产生的工具调用整合后重新加入大脑记忆
+		// Consolidate scattered LLM reasoning and generated tool calls back into core memory.
 		if totalContent.Len() > 0 || len(finalToolCalls) > 0 {
 			a.apiMessages = append(a.apiMessages, openai.ChatCompletionMessage{
 				Role:      openai.ChatMessageRoleAssistant,
@@ -97,16 +97,16 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 			})
 		}
 
-		// 如果没有需要执行的工具（比如已经向用户打完招呼和报告完毕），自动安全退出大循环回合！
+		// If there are no tools to execute (e.g., greeted user and finished reporting), safely exit the main loop!
 		if len(finalToolCalls) == 0 {
 			outChan <- AgentEvent{Done: true}
 			return
 		}
 
-		// 对 Agent 发出的系统控制欲进行执行调停
+		// Mediate the execution of the Agent's systemic control requests.
 		for _, tc := range finalToolCalls {
 			payload := &tools.ToolPayload{
-				Kind:      tools.ToolKindShell, // TODO: 未来按需拓展为 mapping
+				Kind:      tools.ToolKindShell, // TODO: Expand mapping as needed in the future
 				Arguments: json.RawMessage(tc.Function.Arguments),
 			}
 			call := &tools.ToolCall{
@@ -115,7 +115,7 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 				Payload:  payload,
 			}
 
-			// 直接将调度权下放至系统级 Router 并在真实 OS 环境下锁并发执行指令
+			// Delegate scheduling power strictly to the system-level Router to execute commands concurrently under a real OS environment.
 			res, err := a.router.BuildAndDispatch(ctx, call)
 
 			var c string
@@ -125,7 +125,7 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 				c = string(res.ToJSON())
 			}
 
-			// 将执行产物记入思维脑区，下一次循环将发送给大模型进行结果分析总结
+			// Record the execution artifact into memory, sending it to the LLM during the next loop for result analysis and summarization.
 			a.apiMessages = append(a.apiMessages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
 				Content:    c,

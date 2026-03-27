@@ -9,14 +9,14 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-// ModelClient 对应 Codex 中的核心长链接/环境网关 (Session-Scoped)
-// 包含稳定的环境配置（Auth, 端点，代理隧道等），伴随 Godex 引擎整个生命周期
+// ModelClient corresponds to the core long-lived environment gateway (Session-Scoped).
+// It contains stable environment configurations (Auth, endpoint, proxy, etc.) living alongside the Godex engine.
 type ModelClient struct {
 	APIClient *openai.Client
 	ModelName string
 }
 
-// NewModelClient 从外部环境中聚合依赖，返回一个稳定的通信网关
+// NewModelClient aggregates dependencies from the external environment and returns a stable communication gateway.
 func NewModelClient() *ModelClient {
 	apiKey := strings.TrimSpace(os.Getenv("API_KEY"))
 	baseURL := strings.TrimSpace(os.Getenv("BASE_URL"))
@@ -56,7 +56,7 @@ func NewModelClient() *ModelClient {
 	}
 }
 
-// NewSession 为即将到来的一次业务请求（Turn-Scoped）创建一个独立的会话边界
+// NewSession creates an isolated session boundary for an upcoming business request (Turn-Scoped).
 func (c *ModelClient) NewSession() *ModelClientSession {
 	return &ModelClientSession{
 		client: c,

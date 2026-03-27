@@ -44,7 +44,7 @@ func (r *ToolRegistry) getHandler(name, namespace string) ToolHandler {
 }
 
 // DispatchAny safely routes and runs the chosen tool payload.
-// Follows precisely the Codex execution lifecycle.
+// Follows precisely the defined tool execution lifecycle.
 func (r *ToolRegistry) DispatchAny(ctx context.Context, invocation *ToolInvocation) (ToolOutput, error) {
 	handler := r.getHandler(invocation.ToolName, invocation.ToolNamespace)
 	if handler == nil {

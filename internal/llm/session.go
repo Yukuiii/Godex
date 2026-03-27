@@ -9,13 +9,13 @@ import (
 	"github.com/sashabaranov/go-openai/jsonschema"
 )
 
-// ModelClientSession 对应 Codex 中极短的回合制生存周期隔离 (Turn-Scoped)
-// 负责处理大模型每次对话的底层碎片拼接，不掺杂任何业务逻辑调度
+// ModelClientSession represents extremely brief turn-based lifecycle isolation (Turn-Scoped).
+// It handles the underlying reconstruction of JSON fragments per LLM dialogue, without any business logic scheduling.
 type ModelClientSession struct {
 	client *ModelClient
 }
 
-// StreamEvent 是一套纯粹、无污染的网络底层暴露模型
+// StreamEvent is a pure, unpolluted underlying network exposure model.
 type StreamEvent struct {
 	DeltaContent    string
 	ToolCallCreated *openai.ToolCall
@@ -23,7 +23,7 @@ type StreamEvent struct {
 	Err             error
 }
 
-// Stream 发起纯净剥离的底层请求引擎通道
+// Stream initiates an unpolluted isolated underlying request engine channel.
 func (s *ModelClientSession) Stream(ctx context.Context, apiMessages []openai.ChatCompletionMessage) (<-chan StreamEvent, error) {
 	out := make(chan StreamEvent, 100)
 
@@ -31,7 +31,7 @@ func (s *ModelClientSession) Stream(ctx context.Context, apiMessages []openai.Ch
 		return nil, errors.New("Missing API_KEY in Godex Environment")
 	}
 
-	// 初始化具有 Tool Calling 抽象能力的发包结构
+	// Initialize the structure containing Tool Calling abstraction capabilities
 	req := openai.ChatCompletionRequest{
 		Model:    s.client.ModelName,
 		Messages: apiMessages,
@@ -61,7 +61,7 @@ func (s *ModelClientSession) Stream(ctx context.Context, apiMessages []openai.Ch
 		return nil, err
 	}
 
-	// 通过 Goroutine 将模型网络层切片粘在一起返回
+	// Reconstruct model network slices together via a Goroutine and return
 	go func() {
 		defer close(out)
 		defer stream.Close()
@@ -108,7 +108,7 @@ func (s *ModelClientSession) Stream(ctx context.Context, apiMessages []openai.Ch
 			}
 		}
 
-		// 有序结算抛出所有的组装完毕的工具实体
+		// Methodically yield all fully assembled tool entities
 		if len(toolCallMap) > 0 {
 			maxIdx := -1
 			for idx := range toolCallMap {
