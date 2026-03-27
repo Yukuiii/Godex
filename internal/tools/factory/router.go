@@ -11,6 +11,10 @@ func BuildDefaultRouter() *tools.ToolRouter {
 	registry.Register("local_shell", "", handlers.NewShellHandler())
 	registry.Register("read_file", "", handlers.NewReadFileHandler())
 	registry.Register("write_file", "", handlers.NewWriteFileHandler())
+	
+	// 扩展高级代码检索引擎套件：避免 AI 在庞大工程里失去环境视距
+	registry.Register("list_dir", "", handlers.NewListDirHandler())
+	registry.Register("search_code", "", handlers.NewSearchCodeHandler())
 
 	return tools.NewToolRouter(registry)
 }
