@@ -26,6 +26,7 @@ type AgentToolResult struct {
 	Role       string
 	Content    string
 	ToolCallID string
+	Name       string
 }
 
 // AgentControl orchestrates the execution flow of tools and stream coordination.
@@ -135,6 +136,7 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 					Role:       openai.ChatMessageRoleTool,
 					Content:    c,
 					ToolCallID: tc.ID,
+					Name:       tc.Function.Name,
 				},
 			}
 		}
