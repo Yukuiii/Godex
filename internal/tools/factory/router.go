@@ -20,5 +20,8 @@ func BuildDefaultRouter() *tools.ToolRouter {
 	// 最强安全写码核心：允许大模型局部精准打补丁，杜绝全文大段重写造成的灾难
 	registry.Register("edit_file", "", handlers.NewEditFileHandler())
 
+	// 网络能力：允许 AI 读取在线文档和 API 参考
+	registry.Register("fetch", "", handlers.NewFetchHandler())
+
 	return tools.NewToolRouter(registry)
 }
