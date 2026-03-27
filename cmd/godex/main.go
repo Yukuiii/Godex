@@ -8,8 +8,7 @@ import (
 
 	"godex/internal/agent"
 	"godex/internal/llm"
-	"godex/internal/tools"
-	"godex/internal/tools/handlers"
+	"godex/internal/tools/factory"
 	"godex/pkg/tui"
 )
 
@@ -20,12 +19,8 @@ func main() {
 	// 2. Initialize Model Client network base
 	client := llm.NewModelClient()
 
-	// 3. Build local Tool Registry & Router
-	registry := tools.NewToolRegistry()
-	registry.Register("local_shell", "", handlers.NewShellHandler())
-	registry.Register("read_file", "", handlers.NewReadFileHandler())
-	registry.Register("write_file", "", handlers.NewWriteFileHandler())
-	router := tools.NewToolRouter(registry)
+	// 3. Assemble full weapons cache via automated factory
+	router := factory.BuildDefaultRouter()
 
 	// 4. Assign gateway and tools to the Agent Controller
 	agentCtrl := agent.NewAgentControl(client, router)
