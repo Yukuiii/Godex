@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
-	"github.com/sashabaranov/go-openai/jsonschema"
 )
 
 // ModelClient represents the core long-lived environment gateway (Session-Scoped).
@@ -70,7 +69,7 @@ type StreamEvent struct {
 
 // Stream initiates an unpolluted isolated underlying request engine channel.
 // It handles the underlying reconstruction of JSON fragments per LLM dialogue, without any business logic scheduling.
-func (c *ModelClient) Stream(ctx context.Context, apiMessages []openai.ChatCompletionMessage) (<-chan StreamEvent, error) {
+func (c *ModelClient) Stream(ctx context.Context, apiMessages []openai.ChatCompletionMessage, tools []openai.Tool) (<-chan StreamEvent, error) {
 	out := make(chan StreamEvent, 100)
 
 	if c.APIClient == nil {
@@ -82,24 +81,7 @@ func (c *ModelClient) Stream(ctx context.Context, apiMessages []openai.ChatCompl
 		Model:    c.ModelName,
 		Messages: apiMessages,
 		Stream:   true,
-		Tools: []openai.Tool{
-			{
-				Type: openai.ToolTypeFunction,
-				Function: &openai.FunctionDefinition{
-					Name:        "local_shell",
-					Description: "Execute a strictly un-interactive command on the host OS shell.",
-					Parameters: jsonschema.Definition{
-						Type: jsonschema.Object,
-						Properties: map[string]jsonschema.Definition{
-							"command":    {Type: jsonschema.String, Description: "shell command"},
-							"workdir":    {Type: jsonschema.String},
-							"timeout_ms": {Type: jsonschema.Integer},
-						},
-						Required: []string{"command"},
-					},
-				},
-			},
-		},
+		Tools:    tools, // Passed down from Agent Control's dynamically collected specifications
 	}
 
 	stream, err := c.APIClient.CreateChatCompletionStream(ctx, req)
