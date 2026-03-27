@@ -124,8 +124,8 @@ func (h *FetchHandler) Handle(ctx context.Context, invocation *tools.ToolInvocat
 		}, nil
 	}
 
-	// Read with a 512KB cap to avoid memory bombs
-	const maxBody = 512 * 1024
+	// Read with a 2MB cap to avoid memory bombs
+	const maxBody = 2 * 1024 * 1024
 	limitedReader := io.LimitReader(resp.Body, maxBody)
 	body, err := io.ReadAll(limitedReader)
 	if err != nil {
