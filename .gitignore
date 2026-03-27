@@ -14,3 +14,6 @@ vendor/
 
 # External reference repositories (ignoring untracked nested git repo)
 codex-repo/
+
+# Env values
+.env
