@@ -19,7 +19,6 @@ type ListDirArgs struct {
 	Depth   *int   `json:"depth,omitempty"`
 }
 
-// ListDirHandler implements navigation functionality, enabling the Agent to traverse repo trees quickly.
 type ListDirHandler struct{}
 
 func NewListDirHandler() *ListDirHandler {
@@ -47,7 +46,7 @@ func (h *ListDirHandler) GetToolSpec() openai.Tool {
 		Type: openai.ToolTypeFunction,
 		Function: &openai.FunctionDefinition{
 			Name:        "list_dir",
-			Description: "Lists files and directories in a local directory up to a specified depth. Essential for orienting and navigating unknown repositories.",
+			Description: "Lists files and directories in a local directory up to a specified depth. Shows file sizes and modification times. Essential for orienting and navigating unknown repositories.",
 			Parameters: jsonschema.Definition{
 				Type: jsonschema.Object,
 				Properties: map[string]jsonschema.Definition{
@@ -61,7 +60,18 @@ func (h *ListDirHandler) GetToolSpec() openai.Tool {
 }
 
 func (h *ListDirHandler) IsMutating(_ context.Context, _ *tools.ToolInvocation) bool {
-	return false // purely analytical payload
+	return false
+}
+
+func formatSize(size int64) string {
+	switch {
+	case size >= 1<<20:
+		return fmt.Sprintf("%.1fM", float64(size)/float64(1<<20))
+	case size >= 1<<10:
+		return fmt.Sprintf("%.1fK", float64(size)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%dB", size)
+	}
 }
 
 func (h *ListDirHandler) Handle(_ context.Context, invocation *tools.ToolInvocation) (tools.ToolOutput, error) {
@@ -81,18 +91,19 @@ func (h *ListDirHandler) Handle(_ context.Context, invocation *tools.ToolInvocat
 	}
 
 	var results []string
+	fileCount := 0
+	dirCount := 0
 	baseLevel := len(strings.Split(tgtPath, string(filepath.Separator)))
 
 	err = filepath.WalkDir(tgtPath, func(path string, d fs.DirEntry, walkerErr error) error {
 		if walkerErr != nil {
-			return nil // Soft-skip permission denied blocks without throwing entirely.
+			return nil
 		}
 
 		if path == tgtPath {
-			return nil // skip root payload presentation
+			return nil
 		}
 
-		// Prune huge standard directories to avoid blinding LLM token contexts.
 		if d.IsDir() {
 			if d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "vendor" || d.Name() == "__pycache__" {
 				return filepath.SkipDir
@@ -109,10 +120,19 @@ func (h *ListDirHandler) Handle(_ context.Context, invocation *tools.ToolInvocat
 		}
 
 		rel, _ := filepath.Rel(tgtPath, path)
+		info, infoErr := d.Info()
+
 		if d.IsDir() {
+			dirCount++
 			results = append(results, fmt.Sprintf("[DIR]  %s/", rel))
 		} else {
-			results = append(results, fmt.Sprintf("[FILE] %s", rel))
+			fileCount++
+			if infoErr == nil {
+				modTime := info.ModTime().Format("2006-01-02 15:04")
+				results = append(results, fmt.Sprintf("[FILE] %-40s %6s  %s", rel, formatSize(info.Size()), modTime))
+			} else {
+				results = append(results, fmt.Sprintf("[FILE] %s", rel))
+			}
 		}
 		return nil
 	})
@@ -128,6 +148,7 @@ func (h *ListDirHandler) Handle(_ context.Context, invocation *tools.ToolInvocat
 		}, nil
 	}
 
+	results = append(results, fmt.Sprintf("\n--- %d file(s), %d dir(s) ---", fileCount, dirCount))
 	out := strings.Join(results, "\n")
 	return &tools.GenericToolOutput{
 		Success: true,
