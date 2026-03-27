@@ -35,6 +35,7 @@ var (
 type chatMessage struct {
 	role      string
 	content   string
+	name      string
 	toolCalls []openai.ToolCall
 }
 
@@ -77,7 +78,7 @@ func renderMessages(messages []chatMessage, width int) string {
 	// Use lipgloss to limit max width for natural word wrapping
 	wrapStyle := lipgloss.NewStyle().Width(width - 4)
 
-	for _, msg := range messages {
+	for i, msg := range messages {
 		switch msg.role {
 		case openai.ChatMessageRoleUser:
 			s.WriteString(wrapStyle.Render(userStyle.Render("You: ") + msg.content) + "\n\n")
@@ -88,13 +89,25 @@ func renderMessages(messages []chatMessage, width int) string {
 			}
 			if len(msg.toolCalls) > 0 {
 				for _, call := range msg.toolCalls {
-					s.WriteString(wrapStyle.Render(systemStyle.Render(fmt.Sprintf("  [Tool] Using ➔ %s", call.Function.Name))) + "\n")
+					isDone := false
+					for j := i + 1; j < len(messages); j++ {
+						if messages[j].role == openai.ChatMessageRoleTool && messages[j].name == call.Function.Name {
+							isDone = true
+							break
+						}
+					}
+
+					if isDone {
+						s.WriteString(wrapStyle.Render(systemStyle.Render(fmt.Sprintf("  [%s] done", call.Function.Name))) + "\n")
+					} else {
+						s.WriteString(wrapStyle.Render(systemStyle.Render(fmt.Sprintf("  [%s]...", call.Function.Name))) + "\n")
+					}
 				}
 				s.WriteString("\n")
 			}
 
 		case openai.ChatMessageRoleTool:
-			s.WriteString(wrapStyle.Render(systemStyle.Render("  [Success] System Job Completed")) + "\n\n")
+			// Hidden: Result explicitly folded into the Assistant's UI above as `done`
 
 		case openai.ChatMessageRoleSystem:
 			s.WriteString(wrapStyle.Render(systemStyle.Render(" > " + msg.content)) + "\n\n")
@@ -175,6 +188,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, chatMessage{
 				role:    openai.ChatMessageRoleTool,
 				content: msg.ToolCallResult.Content,
+				name:    msg.ToolCallResult.Name,
 			})
 		} else if msg.DeltaContent != "" {
 			lastIdx := len(m.messages) - 1
