@@ -61,8 +61,7 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 	defer close(outChan)
 
 	for {
-		session := a.client.NewSession()
-		streamChan, err := session.Stream(ctx, a.apiMessages)
+		streamChan, err := a.client.Stream(ctx, a.apiMessages)
 		if err != nil {
 			outChan <- AgentEvent{Err: err}
 			return
