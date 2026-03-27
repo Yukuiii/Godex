@@ -47,6 +47,7 @@ type appModel struct {
 	isLoading  bool
 	streamChan chan agent.AgentEvent
 	ready      bool
+	quitting   bool
 }
 
 func initialModel(agentCtrl *agent.AgentControl) appModel {
@@ -136,9 +137,24 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
+		if msg.Type != tea.KeyCtrlC && m.quitting {
+			m.quitting = false // Reset quit state if user types something else
+		}
+
 		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
-			return m, tea.Quit
+		case tea.KeyCtrlC:
+			if m.quitting {
+				return m, tea.Quit
+			}
+			m.quitting = true
+			m.messages = append(m.messages, chatMessage{
+				role:    openai.ChatMessageRoleSystem,
+				content: "Press Ctrl+C again to exit Godex.",
+			})
+			m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
+			m.vp.GotoBottom()
+			return m, nil
+
 		case tea.KeyEnter:
 			v := strings.TrimSpace(m.ti.Value())
 			if v == "" || m.isLoading {
