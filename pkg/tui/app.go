@@ -249,7 +249,7 @@ func (m appModel) View() string {
 
 	var footer strings.Builder
 	if m.isLoading {
-		footer.WriteString(agentStyle.Render("Godex Sub-Agent loop running..."))
+		footer.WriteString(agentStyle.Render("Thinking..."))
 	} else {
 		footer.WriteString(m.ti.View() + "\n")
 		footer.WriteString(systemStyle.Render("  [Enter: Send]  [Esc: Quit]  [PgUp/PgDn: Scroll]"))
