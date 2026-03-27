@@ -1,0 +1,16 @@
+# Mac OS
+.DS_Store
+
+# Go workspaces
+bin/
+vendor/
+*.out
+*.test
+*.prof
+
+# IDEs
+.idea/
+.vscode/
+
+# External reference repositories (ignoring untracked nested git repo)
+codex-repo/
