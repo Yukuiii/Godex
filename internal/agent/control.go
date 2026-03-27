@@ -44,7 +44,7 @@ func NewAgentControl(client *llm.ModelClient, router *tools.ToolRouter) *AgentCo
 	
 	a.apiMessages = append(a.apiMessages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleSystem,
-		Content: "You are Godex, an advanced macOS coding engine. You MUST use 'local_shell' extensively.",
+		Content: "You are Godex, an advanced macOS coding engine. Employ 'read_file', 'write_file', or 'local_shell' extensively.",
 	})
 	return a
 }
@@ -61,7 +61,7 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 	defer close(outChan)
 
 	for {
-		streamChan, err := a.client.Stream(ctx, a.apiMessages)
+		streamChan, err := a.client.Stream(ctx, a.apiMessages, a.router.GetAllToolSpecs())
 		if err != nil {
 			outChan <- AgentEvent{Err: err}
 			return
@@ -105,7 +105,6 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 		// Mediate the execution of the Agent's systemic control requests.
 		for _, tc := range finalToolCalls {
 			payload := &tools.ToolPayload{
-				Kind:      tools.ToolKindShell, // TODO: Expand mapping as needed in the future
 				Arguments: json.RawMessage(tc.Function.Arguments),
 			}
 			call := &tools.ToolCall{
