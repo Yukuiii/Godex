@@ -23,6 +23,8 @@ func main() {
 	// 3. Build local Tool Registry & Router
 	registry := tools.NewToolRegistry()
 	registry.Register("local_shell", "", handlers.NewShellHandler())
+	registry.Register("read_file", "", handlers.NewReadFileHandler())
+	registry.Register("write_file", "", handlers.NewWriteFileHandler())
 	router := tools.NewToolRouter(registry)
 
 	// 4. Assign gateway and tools to the Agent Controller
