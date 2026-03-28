@@ -63,10 +63,12 @@ type appModel struct {
 	quitting   bool
 }
 
-func renderWelcomeHeader() string {
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("── Godex ") +
+func renderTitle() string {
+	return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("── Godex ") +
 		versionStyle.Render("v0.1.0 ──")
+}
 
+func renderWelcomeBanner() string {
 	mascot := mascotStyle.Render(strings.Join([]string{
 		`    ██████████████`,
 		`  ██                ██`,
@@ -87,8 +89,7 @@ func renderWelcomeHeader() string {
 		systemStyle.Render("  PgUp/PgDn to scroll"),
 	)
 
-	banner := lipgloss.JoinHorizontal(lipgloss.Center, mascot, "    ", info)
-	return title + "\n" + banner
+	return lipgloss.JoinHorizontal(lipgloss.Center, mascot, "    ", info) + "\n\n"
 }
 
 func initialModel(agentCtrl *agent.AgentControl) appModel {
@@ -162,7 +163,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		headerHeight := lipgloss.Height(renderWelcomeHeader()) + 2
+		headerHeight := lipgloss.Height(renderTitle()) + 2
 		footerHeight := 4
 
 		m.ti.Width = msg.Width - 4
@@ -170,7 +171,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.vp = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
 			m.vp.YPosition = headerHeight
-				m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
+			m.vp.SetContent(renderWelcomeBanner() + renderMessages(m.messages, m.vp.Width))
 			m.ready = true
 		} else {
 			m.vp.Width = msg.Width
@@ -200,7 +201,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, chatMessage{role: openai.ChatMessageRoleUser, content: v})
 			m.isLoading = true
 
-				m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
+				m.vp.SetContent(renderWelcomeBanner() + renderMessages(m.messages, m.vp.Width))
 			m.vp.GotoBottom()
 
 			// ====== Trigger the underlying Agent upon user input ======
@@ -221,12 +222,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.isLoading = false
 			m.messages = append(m.messages, chatMessage{role: openai.ChatMessageRoleSystem, content: "Error: " + msg.Err.Error()})
-				m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
+				m.vp.SetContent(renderWelcomeBanner() + renderMessages(m.messages, m.vp.Width))
 			return m, nil
 		}
 		if msg.Done {
 			m.isLoading = false
-				m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
+				m.vp.SetContent(renderWelcomeBanner() + renderMessages(m.messages, m.vp.Width))
 			return m, nil // Stream pushing is complete
 		}
 
@@ -250,7 +251,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-			m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
+			m.vp.SetContent(renderWelcomeBanner() + renderMessages(m.messages, m.vp.Width))
 		m.vp.GotoBottom()
 		return m, m.waitForStream()
 	}
@@ -279,7 +280,7 @@ func (m appModel) View() string {
 		return "\n  Initializing Godex OS..."
 	}
 
-	header := renderWelcomeHeader()
+	header := renderTitle()
 	body := m.vp.View()
 
 	var footer strings.Builder
