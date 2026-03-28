@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -43,9 +44,14 @@ func NewAgentControl(client *llm.ModelClient, router *tools.ToolRouter) *AgentCo
 		router: router,
 	}
 	
+	systemPrompt := "You are Godex, an advanced macOS coding engine. Employ 'read_file', 'write_file', or 'local_shell' extensively."
+	if b, err := os.ReadFile("prompt/system.md"); err == nil {
+		systemPrompt = string(b)
+	}
+
 	a.apiMessages = append(a.apiMessages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleSystem,
-		Content: "You are Godex, an advanced macOS coding engine. Employ 'read_file', 'write_file', or 'local_shell' extensively.",
+		Content: systemPrompt,
 	})
 	return a
 }
