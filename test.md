@@ -1,1 +1,97 @@
-变化是世界永恒的律动，它以四季更替、技术突破、社会进步的形式不断降临。面对这种不可预见的潮流，我们不能坐等被决定，而应主动求变，以学习为舟、以思考为桨，在时代的激流中开辟属于自己的航向。每一次新技术的出现，都像一把双刃剑，带来机遇也伴随挑战；关键在于我们是否具备快速适应、持续创新的能力。当我们在深夜的灯光下查阅资料、在实验室里进行探索时，其实是在为自己铺设新的可能。更重要的是，变化并非单纯的外部力量，更是内在心境的调适。保持谦逊，敢于承认无知；保持好奇，勇于提问，这两点是突破瓶颈的关键。让我们以积极的心态拥抱每一次变化，把不确定变成新的起点，以开放的视野去捕捉潜在的机会，以坚定的步伐向前前进，终将在未来的画卷中留下耀眼的笔触。团队的合作往往能够放大个人的力量，共同的智慧在面对复杂问题时能够迅速产生创新方案，这种集体智慧的碰撞让解决问题的速度大幅提升。让我们珍惜每一次学习的机会，把每一次挑战视作成长的垫脚石，在不断的实践中锤炼意志，最终实现自我价值的升华。因此，在变动不居的今天，更应保持学习的热情，敢于自我超越，让每一次变化都成为通往成功的阶梯，书写属于自己的精彩篇章。
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"godex/internal/tools"
+
+	openai "github.com/sashabaranov/go-openai"
+	"github.com/sashabaranov/go-openai/jsonschema"
+)
+
+type WriteFileArgs struct {
+	AbsolutePath string `json:"absolute_path"`
+	Content      string `json:"content"`
+}
+
+type WriteFileHandler struct{}
+
+// NewWriteFileHandler creates a handler exclusively dedicated to over-writing/creating files.
+func NewWriteFileHandler() *WriteFileHandler {
+	return &WriteFileHandler{}
+}
+
+func (h *WriteFileHandler) Kind() tools.ToolKind {
+	return tools.ToolKindCustom
+}
+
+func (h *WriteFileHandler) MatchesKind(payload *tools.ToolPayload) bool {
+	return true
+}
+
+func (h *WriteFileHandler) PreToolUsePayload(invocation *tools.ToolInvocation) *tools.PreToolUsePayload {
+	return &tools.PreToolUsePayload{Command: "write_file"}
+}
+
+func (h *WriteFileHandler) PostToolUsePayload(callID string, payload *tools.ToolPayload, result tools.ToolOutput) *tools.PostToolUsePayload {
+	return &tools.PostToolUsePayload{Command: "write_file", ToolResponse: result.ToJSON()}
+}
+
+func (h *WriteFileHandler) GetToolSpec() openai.Tool {
+	return openai.Tool{
+		Type: openai.ToolTypeFunction,
+		Function: &openai.FunctionDefinition{
+			Name:        "write_file",
+			Description: "Create or completely overwrite the content of a specified file on the local OS. Will create parent directories automatically.",
+			Parameters: jsonschema.Definition{
+				Type: jsonschema.Object,
+				Properties: map[string]jsonschema.Definition{
+					"absolute_path": {Type: jsonschema.String, Description: "Absolute or relative path to the file to construct/overwrite."},
+					"content":       {Type: jsonschema.String, Description: "Full raw string payload to inject."},
+				},
+				Required: []string{"absolute_path", "content"},
+			},
+		},
+	}
+}
+
+// IsMutating defines that this operation writes to disk and requires mutex gates on Registry execution.
+func (h *WriteFileHandler) IsMutating(_ context.Context, _ *tools.ToolInvocation) bool {
+	return true // Writing directly mutates the OS, enforcing the concurrency lock in the registry gate.
+}
+
+// Handle performs the logic of reading path configurations and overriding file context.
+func (h *WriteFileHandler) Handle(ctx context.Context, invocation *tools.ToolInvocation) (tools.ToolOutput, error) {
+	var args WriteFileArgs
+	if err := json.Unmarshal(invocation.Payload.Arguments, &args); err != nil {
+		return nil, fmt.Errorf("failed to parse write_file arguments: %w", err)
+	}
+
+	if args.AbsolutePath == "" {
+		return nil, fmt.Errorf("argument 'absolute_path' is required")
+	}
+
+	dir := filepath.Dir(args.AbsolutePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create target file parent directories: %w", err)
+	}
+
+	if err := os.WriteFile(args.AbsolutePath, []byte(args.Content), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write to file '%s': %w", args.AbsolutePath, err)
+	}
+
+	m := map[string]interface{}{
+		"exit_code": 0,
+		"message":   fmt.Sprintf("Successfully wrote %d bytes to %s", len(args.Content), args.AbsolutePath),
+	}
+	outBytes, _ := json.Marshal(m)
+
+	return &tools.GenericToolOutput{
+		Success: true,
+		Data:    outBytes,
+	}, nil
+}
