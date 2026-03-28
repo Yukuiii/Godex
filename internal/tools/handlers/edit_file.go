@@ -39,7 +39,11 @@ func (h *EditFileHandler) MatchesKind(payload *tools.ToolPayload) bool {
 }
 
 func (h *EditFileHandler) PreToolUsePayload(invocation *tools.ToolInvocation) *tools.PreToolUsePayload {
-	return &tools.PreToolUsePayload{Command: "edit_file"}
+	var args struct {
+		AbsolutePath string `json:"absolute_path"`
+	}
+	_ = json.Unmarshal(invocation.Payload.Arguments, &args)
+	return &tools.PreToolUsePayload{Command: "edit_file", FilePath: args.AbsolutePath}
 }
 
 func (h *EditFileHandler) PostToolUsePayload(callID string, payload *tools.ToolPayload, result tools.ToolOutput) *tools.PostToolUsePayload {

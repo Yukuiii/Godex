@@ -34,7 +34,11 @@ func (h *WriteFileHandler) MatchesKind(payload *tools.ToolPayload) bool {
 }
 
 func (h *WriteFileHandler) PreToolUsePayload(invocation *tools.ToolInvocation) *tools.PreToolUsePayload {
-	return &tools.PreToolUsePayload{Command: "write_file"}
+	var args struct {
+		AbsolutePath string `json:"absolute_path"`
+	}
+	_ = json.Unmarshal(invocation.Payload.Arguments, &args)
+	return &tools.PreToolUsePayload{Command: "write_file", FilePath: args.AbsolutePath}
 }
 
 func (h *WriteFileHandler) PostToolUsePayload(callID string, payload *tools.ToolPayload, result tools.ToolOutput) *tools.PostToolUsePayload {

@@ -8,7 +8,8 @@ import (
 
 // PreToolUsePayload and PostToolUsePayload are used for executing safety and tracking hooks.
 type PreToolUsePayload struct {
-	Command string
+	Command  string
+	FilePath string // Target file path for read/edit/write operations, used by registry to enforce read-before-edit policy.
 }
 
 type PostToolUsePayload struct {

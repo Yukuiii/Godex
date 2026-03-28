@@ -36,7 +36,11 @@ func (h *ReadFileHandler) MatchesKind(payload *tools.ToolPayload) bool {
 }
 
 func (h *ReadFileHandler) PreToolUsePayload(invocation *tools.ToolInvocation) *tools.PreToolUsePayload {
-	return &tools.PreToolUsePayload{Command: "read_file"}
+	var args struct {
+		AbsolutePath string `json:"absolute_path"`
+	}
+	_ = json.Unmarshal(invocation.Payload.Arguments, &args)
+	return &tools.PreToolUsePayload{Command: "read_file", FilePath: args.AbsolutePath}
 }
 
 func (h *ReadFileHandler) PostToolUsePayload(callID string, payload *tools.ToolPayload, result tools.ToolOutput) *tools.PostToolUsePayload {
