@@ -37,6 +37,12 @@ var (
 
 	sepStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("238"))
+
+	mascotStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("208"))
+
+	versionStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240"))
 )
 
 type chatMessage struct {
@@ -57,6 +63,34 @@ type appModel struct {
 	quitting   bool
 }
 
+func renderWelcomeHeader() string {
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("── Godex ") +
+		versionStyle.Render("v0.1.0 ──")
+
+	mascot := mascotStyle.Render(strings.Join([]string{
+		`    ██████████████`,
+		`  ██                ██`,
+		`  ██  ███    ███  ██`,
+		`  ██  ███    ███  ██`,
+		`  ██                ██`,
+		`  ████  ██████  ████`,
+		`      ████████████`,
+		`    ██████████████`,
+	}, "\n"))
+
+	info := lipgloss.JoinVertical(lipgloss.Left,
+		userStyle.Render("Welcome to Godex!"),
+		"",
+		systemStyle.Render("Tips:"),
+		systemStyle.Render("  Enter to send message"),
+		systemStyle.Render("  Ctrl+C twice to exit"),
+		systemStyle.Render("  PgUp/PgDn to scroll"),
+	)
+
+	banner := lipgloss.JoinHorizontal(lipgloss.Center, mascot, "    ", info)
+	return title + "\n" + banner
+}
+
 func initialModel(agentCtrl *agent.AgentControl) appModel {
 	ti := textinput.New()
 	ti.Prompt = ""
@@ -68,9 +102,6 @@ func initialModel(agentCtrl *agent.AgentControl) appModel {
 	return appModel{
 		ti:        ti,
 		agentCtrl: agentCtrl,
-		messages: []chatMessage{
-			{role: openai.ChatMessageRoleSystem, content: "[System] Godex OS Activated! Modular Architecture Loaded."},
-		},
 	}
 }
 
@@ -131,7 +162,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		headerHeight := lipgloss.Height(titleStyle.Render("╭── GODEX CHAT ENGINE ──╮")) + 2 // Includes bottom margin
+		headerHeight := lipgloss.Height(renderWelcomeHeader()) + 2
 		footerHeight := 3
 
 		m.ti.Width = msg.Width - 4
@@ -254,7 +285,7 @@ func (m appModel) View() string {
 		return "\n  Initializing Godex OS..."
 	}
 
-	header := titleStyle.Render("╭── GODEX CHAT ENGINE ──╮")
+	header := renderWelcomeHeader()
 	body := m.vp.View()
 
 	var footer strings.Builder
