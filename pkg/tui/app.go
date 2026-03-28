@@ -30,6 +30,19 @@ var (
 
 	systemStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240"))
+
+	// 输入区域样式 — 模仿 Claude Code 的深色输入条
+	promptStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("208")).
+			Bold(true)
+
+	inputBarStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("235")).
+			PaddingLeft(0)
+
+	hintStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Background(lipgloss.Color("235"))
 )
 
 type chatMessage struct {
@@ -52,10 +65,11 @@ type appModel struct {
 
 func initialModel(agentCtrl *agent.AgentControl) appModel {
 	ti := textinput.New()
-	ti.Placeholder = "Type your command to Godex..."
+	ti.Prompt = ""       // 不使用 textinput 自带的 prompt，我们自己渲染 ❯
+	ti.Placeholder = ""  // Claude Code 风格：无 placeholder 文字
 	ti.Focus()
-	ti.CharLimit = 512
-	ti.Width = 60
+	ti.CharLimit = 4096
+	ti.Width = 80        // 初始值，会在 WindowSizeMsg 中动态调整
 
 	return appModel{
 		ti:        ti,
@@ -124,7 +138,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		headerHeight := lipgloss.Height(titleStyle.Render("╭── GODEX CHAT ENGINE ──╮")) + 2 // Includes bottom margin
-		footerHeight := 2                                                                   // Footer lines
+		footerHeight := 3                                                                   // 输入提示符行 + 分隔线 + hint 行
+
+		// 让输入框跟随终端宽度
+		m.ti.Width = msg.Width - 4 // 留出 "❯ " 提示符宽度
 
 		if !m.ready {
 			m.vp = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
@@ -248,11 +265,22 @@ func (m appModel) View() string {
 	body := m.vp.View()
 
 	var footer strings.Builder
+
+	// 输入区域顶部分隔线
+	sepWidth := m.ti.Width + 4
+	if sepWidth < 10 {
+		sepWidth = 80
+	}
+	footer.WriteString(inputBarStyle.Render(strings.Repeat("─", sepWidth)) + "\n")
+
 	if m.isLoading {
-		footer.WriteString(agentStyle.Render("Thinking..."))
+		// 加载态：显示 spinner 风格提示
+		spinnerLine := promptStyle.Render("❯ ") + agentStyle.Render("Thinking...")
+		footer.WriteString(inputBarStyle.Width(sepWidth).Render(spinnerLine))
 	} else {
-		footer.WriteString(m.ti.View() + "\n")
-		footer.WriteString(systemStyle.Render("  [Enter: Send]  [Esc: Quit]  [PgUp/PgDn: Scroll]"))
+		// 正常态：❯ 提示符 + 输入框，暗色背景条
+		inputLine := promptStyle.Render("❯ ") + m.ti.View()
+		footer.WriteString(inputBarStyle.Width(sepWidth).Render(inputLine))
 	}
 
 	return fmt.Sprintf("%s\n\n%s\n%s", header, body, footer.String())
