@@ -28,6 +28,7 @@ type AgentToolResult struct {
 	Content    string
 	ToolCallID string
 	Name       string
+	IsError    bool // Indicates the tool returned a policy violation or execution failure.
 }
 
 // AgentControl orchestrates the execution flow of tools and stream coordination.
@@ -130,6 +131,8 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 				c = string(res.ToJSON())
 			}
 
+			isErr := err != nil || (res != nil && !res.IsSuccess())
+
 			// Record the execution artifact into memory, sending it to the LLM during the next loop for result analysis and summarization.
 			a.apiMessages = append(a.apiMessages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
@@ -143,6 +146,7 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 					Content:    c,
 					ToolCallID: tc.ID,
 					Name:       tc.Function.Name,
+					IsError:    isErr,
 				},
 			}
 		}
