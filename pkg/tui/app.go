@@ -163,7 +163,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		headerHeight := lipgloss.Height(renderWelcomeHeader()) + 2
-		footerHeight := 3
+		footerHeight := 4
 
 		m.ti.Width = msg.Width - 4
 
@@ -188,12 +188,6 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.quitting = true
-			m.messages = append(m.messages, chatMessage{
-				role:    openai.ChatMessageRoleSystem,
-				content: "Press Ctrl+C again to exit Godex.",
-			})
-			m.vp.SetContent(renderMessages(m.messages, m.vp.Width))
-			m.vp.GotoBottom()
 			return m, nil
 
 		case tea.KeyEnter:
@@ -301,6 +295,10 @@ func (m appModel) View() string {
 		footer.WriteString(promptStyle.Render("❯ Thinking..."))
 	} else {
 		footer.WriteString(promptStyle.Render("❯ ") + m.ti.View())
+	}
+
+	if m.quitting {
+		footer.WriteString("\n" + systemStyle.Render("  Press Ctrl+C again to exit"))
 	}
 
 	return fmt.Sprintf("%s\n\n%s\n%s", header, body, footer.String())
