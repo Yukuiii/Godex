@@ -38,6 +38,9 @@ var (
 	sepStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("238"))
 
+	toolErrorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196"))
+
 	mascotStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("208"))
 
@@ -49,6 +52,7 @@ type chatMessage struct {
 	role      string
 	content   string
 	name      string
+	isError   bool // Tool returned a policy violation or execution failure.
 	toolCalls []openai.ToolCall
 }
 
@@ -131,14 +135,18 @@ func renderMessages(messages []chatMessage, width int) string {
 			if len(msg.toolCalls) > 0 {
 				for _, call := range msg.toolCalls {
 					isDone := false
+					isErr := false
 					for j := i + 1; j < len(messages); j++ {
 						if messages[j].role == openai.ChatMessageRoleTool && messages[j].name == call.Function.Name {
 							isDone = true
+							isErr = messages[j].isError
 							break
 						}
 					}
 
-					if isDone {
+					if isDone && isErr {
+						s.WriteString(wrapStyle.Render(toolErrorStyle.Render(fmt.Sprintf("  [%s] error", call.Function.Name))) + "\n")
+					} else if isDone {
 						s.WriteString(wrapStyle.Render(systemStyle.Render(fmt.Sprintf("  [%s] done", call.Function.Name))) + "\n")
 					} else {
 						s.WriteString(wrapStyle.Render(systemStyle.Render(fmt.Sprintf("  [%s]...", call.Function.Name))) + "\n")
@@ -148,7 +156,10 @@ func renderMessages(messages []chatMessage, width int) string {
 			}
 
 		case openai.ChatMessageRoleTool:
-			// Hidden: Result explicitly folded into the Assistant's UI above as `done`
+			// Only surface tool errors (e.g. policy violations) to the user; normal results stay folded.
+			if msg.isError && msg.content != "" {
+				s.WriteString(wrapStyle.Render(toolErrorStyle.Render(fmt.Sprintf("  ✘ [%s] %s", msg.name, msg.content))) + "\n")
+			}
 
 		case openai.ChatMessageRoleSystem:
 			s.WriteString(wrapStyle.Render(systemStyle.Render(" > " + msg.content)) + "\n\n")
@@ -241,6 +252,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				role:    openai.ChatMessageRoleTool,
 				content: msg.ToolCallResult.Content,
 				name:    msg.ToolCallResult.Name,
+				isError: msg.ToolCallResult.IsError,
 			})
 		} else if msg.DeltaContent != "" {
 			lastIdx := len(m.messages) - 1
