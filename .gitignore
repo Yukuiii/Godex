@@ -13,7 +13,8 @@ vendor/
 .vscode/
 
 # External reference repositories (ignoring untracked nested git repo)
-codex-repo/
+codex-src/
+cc-src/
 
 # Env values
 .env
