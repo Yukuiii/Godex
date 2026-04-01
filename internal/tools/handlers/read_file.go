@@ -209,30 +209,39 @@ func (h *ReadFileHandler) Handle(ctx context.Context, invocation *tools.ToolInvo
 		truncated = true
 	}
 
-	// 构建输出 (cat -n 格式)
+	// 构建带行号的内容 (cat -n 格式)
 	var builder strings.Builder
 	for i, line := range selectedLines {
 		lineNum := offset + i
 		builder.WriteString(fmt.Sprintf("%d\t%s\n", lineNum, line))
 	}
 
-	// 追加状态提示
 	outputLineCount := len(selectedLines)
-	if truncated {
-		builder.WriteString(fmt.Sprintf(
-			"\n[Notice: Output truncated at %d lines. Use 'offset' and 'limit' parameters to read other portions of the file. Total lines in file: %d]\n",
-			maxOutputLines, totalLines,
-		))
-	} else if offset > 1 || endIdx < totalLines {
-		builder.WriteString(fmt.Sprintf(
-			"\n[Showing lines %d-%d of %d total lines in '%s']\n",
-			offset, offset+outputLineCount-1, totalLines, filepath.Base(filePath),
-		))
+
+	// 构建结构化输出
+	type ReadFileOutput struct {
+		FilePath   string `json:"filePath"`
+		Content    string `json:"content"`
+		NumLines   int    `json:"numLines"`
+		StartLine  int    `json:"startLine"`
+		TotalLines int    `json:"totalLines"`
+		Truncated  bool   `json:"truncated,omitempty"`
 	}
+
+	output := ReadFileOutput{
+		FilePath:   filePath,
+		Content:    builder.String(),
+		NumLines:   outputLineCount,
+		StartLine:  offset,
+		TotalLines: totalLines,
+		Truncated:  truncated,
+	}
+
+	data, _ := json.Marshal(output)
 
 	return &tools.GenericToolOutput{
 		Success: true,
-		Data:    []byte(builder.String()),
+		Data:    data,
 		DisplayMeta: &tools.ToolDisplayMeta{
 			Label:    "Read",
 			FilePath: filePath,
