@@ -233,6 +233,11 @@ func (h *ReadFileHandler) Handle(ctx context.Context, invocation *tools.ToolInvo
 	return &tools.GenericToolOutput{
 		Success: true,
 		Data:    []byte(builder.String()),
+		DisplayMeta: &tools.ToolDisplayMeta{
+			Label:    "Read",
+			FilePath: filePath,
+			Summary:  fmt.Sprintf("%d lines read", outputLineCount),
+		},
 	}, nil
 }
 
@@ -247,9 +252,7 @@ func readFileFast(filePath string) (lines []string, totalLines int, err error) {
 	text := string(raw)
 
 	// 去除 UTF-8 BOM
-	if strings.HasPrefix(text, "\xEF\xBB\xBF") {
-		text = text[3:]
-	}
+	text = strings.TrimPrefix(text, "\xEF\xBB\xBF")
 
 	// CRLF → LF
 	text = strings.ReplaceAll(text, "\r\n", "\n")

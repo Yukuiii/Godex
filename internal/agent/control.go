@@ -13,6 +13,7 @@ import (
 	"godex/internal/tools"
 )
 
+
 // AgentEvent encapsulates clean context abstraction communication packages for one-way reception by the top-level UI.
 type AgentEvent struct {
 	DeltaContent    string
@@ -24,11 +25,12 @@ type AgentEvent struct {
 
 // AgentToolResult represents the entity after underlying tool execution completes.
 type AgentToolResult struct {
-	Role       string
-	Content    string
-	ToolCallID string
-	Name       string
-	IsError    bool // Indicates the tool returned a policy violation or execution failure.
+	Role        string
+	Content     string
+	ToolCallID  string
+	Name        string
+	IsError     bool
+	DisplayMeta *tools.ToolDisplayMeta
 }
 
 // AgentControl orchestrates the execution flow of tools and stream coordination.
@@ -133,7 +135,11 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 
 			isErr := err != nil || (res != nil && !res.IsSuccess())
 
-			// Record the execution artifact into memory, sending it to the LLM during the next loop for result analysis and summarization.
+			var displayMeta *tools.ToolDisplayMeta
+			if res != nil {
+				displayMeta = res.GetDisplayMeta()
+			}
+
 			a.apiMessages = append(a.apiMessages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
 				Content:    c,
@@ -142,11 +148,12 @@ func (a *AgentControl) RunTurn(ctx context.Context, outChan chan<- AgentEvent) {
 
 			outChan <- AgentEvent{
 				ToolCallResult: &AgentToolResult{
-					Role:       openai.ChatMessageRoleTool,
-					Content:    c,
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-					IsError:    isErr,
+					Role:        openai.ChatMessageRoleTool,
+					Content:     c,
+					ToolCallID:  tc.ID,
+					Name:        tc.Function.Name,
+					IsError:     isErr,
+					DisplayMeta: displayMeta,
 				},
 			}
 		}

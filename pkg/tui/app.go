@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -12,6 +13,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 
 	"godex/internal/agent"
+	"godex/internal/tools"
 )
 
 var (
@@ -49,11 +51,12 @@ var (
 )
 
 type chatMessage struct {
-	role      string
-	content   string
-	name      string
-	isError   bool // Tool returned a policy violation or execution failure.
-	toolCalls []openai.ToolCall
+	role        string
+	content     string
+	name        string
+	isError     bool
+	toolCalls   []openai.ToolCall
+	displayMeta *tools.ToolDisplayMeta
 }
 
 type appModel struct {
@@ -117,11 +120,15 @@ func (m appModel) Init() tea.Cmd {
 func renderMessages(messages []chatMessage, width int) string {
 	var s strings.Builder
 	if width < 10 {
-		width = 80 // Fallback width protection
+		width = 80
 	}
-	
-	// Use lipgloss to limit max width for natural word wrapping
+
 	wrapStyle := lipgloss.NewStyle().Width(width - 4)
+
+	toolDotStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+	toolNameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+	toolFileStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	toolInfoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	for i, msg := range messages {
 		switch msg.role {
@@ -136,27 +143,23 @@ func renderMessages(messages []chatMessage, width int) string {
 				for _, call := range msg.toolCalls {
 					isDone := false
 					isErr := false
+					var meta *tools.ToolDisplayMeta
 					for j := i + 1; j < len(messages); j++ {
 						if messages[j].role == openai.ChatMessageRoleTool && messages[j].name == call.Function.Name {
 							isDone = true
 							isErr = messages[j].isError
+							meta = messages[j].displayMeta
 							break
 						}
 					}
 
-					if isDone && isErr {
-						s.WriteString(wrapStyle.Render(toolErrorStyle.Render(fmt.Sprintf("  [%s] error", call.Function.Name))) + "\n")
-					} else if isDone {
-						s.WriteString(wrapStyle.Render(systemStyle.Render(fmt.Sprintf("  [%s] done", call.Function.Name))) + "\n")
-					} else {
-						s.WriteString(wrapStyle.Render(systemStyle.Render(fmt.Sprintf("  [%s]...", call.Function.Name))) + "\n")
-					}
+					line := renderToolCallLine(call, isDone, isErr, meta, toolDotStyle, toolNameStyle, toolFileStyle, toolInfoStyle)
+					s.WriteString(wrapStyle.Render(line) + "\n")
 				}
 				s.WriteString("\n")
 			}
 
 		case openai.ChatMessageRoleTool:
-			// Only surface tool errors (e.g. policy violations) to the user; normal results stay folded.
 			if msg.isError && msg.content != "" {
 				s.WriteString(wrapStyle.Render(toolErrorStyle.Render(fmt.Sprintf("  ✘ [%s] %s", msg.name, msg.content))) + "\n")
 			}
@@ -167,6 +170,39 @@ func renderMessages(messages []chatMessage, width int) string {
 	}
 	return s.String()
 }
+
+// renderToolCallLine 为单个 tool call 生成富格式的显示行。
+// 有 DisplayMeta 时显示为 "● Read filename — N lines read"。
+func renderToolCallLine(
+	call openai.ToolCall,
+	isDone, isErr bool,
+	meta *tools.ToolDisplayMeta,
+	dotStyle, nameStyle, fileStyle, infoStyle lipgloss.Style,
+) string {
+	if isDone && isErr {
+		return toolErrorStyle.Render(fmt.Sprintf("  ✘ [%s] error", call.Function.Name))
+	}
+
+	// 有 DisplayMeta 时使用富格式
+	if meta != nil {
+		dot := dotStyle.Render("●")
+		label := nameStyle.Render(meta.Label)
+		file := fileStyle.Render(filepath.Base(meta.FilePath))
+
+		if !isDone {
+			return fmt.Sprintf("  %s %s %s", dot, label, file)
+		}
+		info := infoStyle.Render("— " + meta.Summary)
+		return fmt.Sprintf("  %s %s %s %s", dot, label, file, info)
+	}
+
+	// 无 DisplayMeta 时使用默认格式
+	if isDone {
+		return systemStyle.Render(fmt.Sprintf("  [%s] done", call.Function.Name))
+	}
+	return systemStyle.Render(fmt.Sprintf("  [%s]...", call.Function.Name))
+}
+
 
 func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -249,10 +285,11 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		} else if msg.ToolCallResult != nil {
 			m.messages = append(m.messages, chatMessage{
-				role:    openai.ChatMessageRoleTool,
-				content: msg.ToolCallResult.Content,
-				name:    msg.ToolCallResult.Name,
-				isError: msg.ToolCallResult.IsError,
+				role:        openai.ChatMessageRoleTool,
+				content:     msg.ToolCallResult.Content,
+				name:        msg.ToolCallResult.Name,
+				isError:     msg.ToolCallResult.IsError,
+				displayMeta: msg.ToolCallResult.DisplayMeta,
 			})
 		} else if msg.DeltaContent != "" {
 			lastIdx := len(m.messages) - 1

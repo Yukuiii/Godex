@@ -39,13 +39,24 @@ type ToolInvocation struct {
 type ToolOutput interface {
 	ToJSON() json.RawMessage
 	IsSuccess() bool
+	GetDisplayMeta() *ToolDisplayMeta
+}
+
+// ToolDisplayMeta 为 TUI 提供结构化的显示信息，工具层填充，UI 层直接消费。
+type ToolDisplayMeta struct {
+	Label    string // 显示标签，如 "Read"
+	FilePath string // 操作的文件路径
+	Summary  string // 摘要信息，如 "17 lines read"
 }
 
 // GenericToolOutput is an easy-to-use implementation of ToolOutput.
 type GenericToolOutput struct {
-	Success bool
-	Data    json.RawMessage
+	Success     bool
+	Data        json.RawMessage
+	DisplayMeta *ToolDisplayMeta
 }
 
-func (o *GenericToolOutput) ToJSON() json.RawMessage { return o.Data }
-func (o *GenericToolOutput) IsSuccess() bool         { return o.Success }
+func (o *GenericToolOutput) ToJSON() json.RawMessage       { return o.Data }
+func (o *GenericToolOutput) IsSuccess() bool               { return o.Success }
+func (o *GenericToolOutput) GetDisplayMeta() *ToolDisplayMeta { return o.DisplayMeta }
+
